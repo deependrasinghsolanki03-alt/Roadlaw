@@ -1,14 +1,12 @@
 python-dotenv
 langchain
 langchain-community
-langchain-huggingface
 langchain-groq
 langchain-text-splitters
 chromadb
 pinecone-client
 langchain-pinecone
 pypdf
-sentence-transformers
 fastapi
 uvicorn[standard]
 python-multipart
@@ -16,5 +14,3 @@ pydantic
 supabase
 requests
 httpx
---extra-index-url https://download.pytorch.org/whl/cpu
-torch

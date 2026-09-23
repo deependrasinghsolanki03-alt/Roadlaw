@@ -32,11 +32,13 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 if not PINECONE_API_KEY:
     raise ValueError("PINECONE_API_KEY not found in .env file")
 
+HF_API_KEY = os.getenv("HF_API_KEY", "")
+
 # ── LangChain imports ──
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.retrievers import BM25Retriever
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 from langchain_groq import ChatGroq
 from langchain_core.prompts import PromptTemplate
 from langchain_core.documents import Document
@@ -121,12 +123,11 @@ class RAGEngine:
         print("  ROADLAW RAG ENGINE v2 — Pinecone Cloud Edition")
         print("=" * 60)
 
-        # ── Embedding model ──
-        print("\n  Loading embedding model...")
-        self.embeddings = HuggingFaceEmbeddings(
+        # ── Embedding model (API-based — no torch/local model needed) ──
+        print("\n  Loading embedding model (API-based)...")
+        self.embeddings = HuggingFaceInferenceAPIEmbeddings(
+            api_key=HF_API_KEY,
             model_name=EMBEDDING_MODEL,
-            model_kwargs={"device": "cpu"},
-            encode_kwargs={"normalize_embeddings": True},
         )
 
         # ── Pinecone vector store ──
