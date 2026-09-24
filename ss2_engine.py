@@ -533,13 +533,15 @@ class RAGEngine:
         answer_json = None
         try:
             import json
-            clean = raw_answer
-            if clean.startswith("```"):
-                clean = clean.split("\n", 1)[1] if "\n" in clean else clean[3:]
-            if clean.endswith("```"):
-                clean = clean[:-3]
-            clean = clean.strip()
-            answer_json = json.loads(clean)
+            import re
+            
+            # Extract JSON block using regex to avoid extra text
+            match = re.search(r'\{.*\}', raw_answer, re.DOTALL)
+            if match:
+                clean = match.group(0)
+                answer_json = json.loads(clean)
+            else:
+                answer_json = json.loads(raw_answer)
         except Exception:
             answer_json = {
                 "primary_rule": raw_answer,
