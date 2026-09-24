@@ -38,7 +38,7 @@ HF_API_KEY = os.getenv("HF_API_KEY", "")
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.retrievers import BM25Retriever
-from langchain_core.embeddings import Embeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
 from langchain_core.prompts import PromptTemplate
 from langchain_core.documents import Document
@@ -49,30 +49,11 @@ from langchain_pinecone import PineconeVectorStore
 
 
 # ═══════════════════════════════════════════════════════════
-#  LIGHTWEIGHT EMBEDDING (FastEmbed — ONNX, no PyTorch)
-# ═══════════════════════════════════════════════════════════
-
-class FastEmbedEmbeddings(Embeddings):
-    """Lightweight embeddings using FastEmbed (ONNX, no PyTorch needed)."""
-    
-    def __init__(self, model_name: str = "BAAI/bge-base-en-v1.5"):
-        from fastembed import TextEmbedding
-        print(f"  Loading FastEmbed model: {model_name}")
-        self.model = TextEmbedding(model_name=model_name)
-    
-    def embed_documents(self, texts):
-        return [e.tolist() for e in self.model.embed(texts)]
-    
-    def embed_query(self, text):
-        return list(self.model.embed([text]))[0].tolist()
-
-
-# ═══════════════════════════════════════════════════════════
 #  CONFIGURATION
 # ═══════════════════════════════════════════════════════════
 
 PDF_FOLDER = "./legal_pdfs"
-EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
+EMBEDDING_MODEL = "sentence-transformers/all-mpnet-base-v2"
 PINECONE_INDEX_NAME = "roadlaw-legal"
 PINECONE_CLOUD = "aws"
 PINECONE_REGION = "us-east-1"
@@ -142,10 +123,12 @@ class RAGEngine:
         print("  ROADLAW RAG ENGINE v2 — Pinecone Cloud Edition")
         print("=" * 60)
 
-        # ── Embedding model (FastEmbed ONNX — no PyTorch needed) ──
-        print("\n  Loading embedding model (FastEmbed)...")
-        self.embeddings = FastEmbedEmbeddings(
+        # ── Embedding model (torch CPU) ──
+        print("\n  Loading embedding model...")
+        self.embeddings = HuggingFaceEmbeddings(
             model_name=EMBEDDING_MODEL,
+            model_kwargs={"device": "cpu"},
+            encode_kwargs={"normalize_embeddings": True},
         )
 
         # ── Pinecone vector store ──
