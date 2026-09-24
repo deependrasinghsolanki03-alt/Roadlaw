@@ -849,15 +849,16 @@ async def delete_legal_pdf(pdf_id: int):
 # =====================================================================
 
 if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 3000))
     print("\n" + "=" * 60)
-    print("  Roadlaw Unified Server v4.0 -- port 3000")
+    print(f"  Roadlaw Unified Server v4.0 -- port {port}")
     print("  AI Legal + Challan + Legal PDFs (Supabase)")
     print("=" * 60 + "\n")
 
     uvicorn.run(
         "server:app",
         host="0.0.0.0",
-        port=3000,
+        port=port,
         reload=False,
         log_level="info",
     )
