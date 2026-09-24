@@ -49,40 +49,21 @@ from langchain_pinecone import PineconeVectorStore
 
 
 # ═══════════════════════════════════════════════════════════
-#  CUSTOM EMBEDDING (uses requests — bypasses DNS issues)
+#  LIGHTWEIGHT EMBEDDING (FastEmbed — ONNX, no PyTorch)
 # ═══════════════════════════════════════════════════════════
 
-class HFAPIEmbeddings(Embeddings):
-    """Custom HuggingFace API Embeddings using requests library directly."""
+class FastEmbedEmbeddings(Embeddings):
+    """Lightweight embeddings using FastEmbed (ONNX Runtime, no PyTorch)."""
     
-    def __init__(self, api_key: str, model_name: str):
-        self.api_key = api_key
-        self.model_name = model_name
-        self.api_url = f"https://router.huggingface.co/hf-inference/pipeline/feature-extraction/{model_name}"
-    
-    def _call_api(self, texts):
-        import requests as req
-        headers = {"Authorization": f"Bearer {self.api_key}"}
-        response = req.post(self.api_url, headers=headers, json={"inputs": texts, "options": {"wait_for_model": True}}, timeout=60)
-        if response.status_code != 200:
-            # Fallback to direct URL
-            fallback_url = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{self.model_name}"
-            response = req.post(fallback_url, headers=headers, json={"inputs": texts, "options": {"wait_for_model": True}}, timeout=60)
-        response.raise_for_status()
-        return response.json()
+    def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
+        from fastembed import TextEmbedding
+        self.model = TextEmbedding(model_name=model_name)
     
     def embed_documents(self, texts):
-        # Batch in groups of 32
-        all_embeddings = []
-        for i in range(0, len(texts), 32):
-            batch = texts[i:i+32]
-            embeddings = self._call_api(batch)
-            all_embeddings.extend(embeddings)
-        return all_embeddings
+        return [e.tolist() for e in self.model.embed(texts)]
     
     def embed_query(self, text):
-        result = self._call_api([text])
-        return result[0]
+        return list(self.model.embed([text]))[0].tolist()
 
 
 # ═══════════════════════════════════════════════════════════
@@ -160,10 +141,9 @@ class RAGEngine:
         print("  ROADLAW RAG ENGINE v2 — Pinecone Cloud Edition")
         print("=" * 60)
 
-        # ── Embedding model (API-based — no torch/local model needed) ──
-        print("\n  Loading embedding model (API-based)...")
-        self.embeddings = HFAPIEmbeddings(
-            api_key=HF_API_KEY,
+        # ── Embedding model (FastEmbed ONNX — lightweight, no PyTorch) ──
+        print("\n  Loading embedding model (FastEmbed ONNX)...")
+        self.embeddings = FastEmbedEmbeddings(
             model_name=EMBEDDING_MODEL,
         )
 
