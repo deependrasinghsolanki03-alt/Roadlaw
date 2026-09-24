@@ -38,7 +38,7 @@ HF_API_KEY = os.getenv("HF_API_KEY", "")
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.retrievers import BM25Retriever
-from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
+from langchain_core.embeddings import Embeddings
 from langchain_groq import ChatGroq
 from langchain_core.prompts import PromptTemplate
 from langchain_core.documents import Document
@@ -46,6 +46,43 @@ from langchain_core.documents import Document
 # ── Pinecone imports ──
 from pinecone import Pinecone, ServerlessSpec
 from langchain_pinecone import PineconeVectorStore
+
+
+# ═══════════════════════════════════════════════════════════
+#  CUSTOM EMBEDDING (uses requests — bypasses DNS issues)
+# ═══════════════════════════════════════════════════════════
+
+class HFAPIEmbeddings(Embeddings):
+    """Custom HuggingFace API Embeddings using requests library directly."""
+    
+    def __init__(self, api_key: str, model_name: str):
+        self.api_key = api_key
+        self.model_name = model_name
+        self.api_url = f"https://router.huggingface.co/hf-inference/pipeline/feature-extraction/{model_name}"
+    
+    def _call_api(self, texts):
+        import requests as req
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        response = req.post(self.api_url, headers=headers, json={"inputs": texts, "options": {"wait_for_model": True}}, timeout=60)
+        if response.status_code != 200:
+            # Fallback to direct URL
+            fallback_url = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{self.model_name}"
+            response = req.post(fallback_url, headers=headers, json={"inputs": texts, "options": {"wait_for_model": True}}, timeout=60)
+        response.raise_for_status()
+        return response.json()
+    
+    def embed_documents(self, texts):
+        # Batch in groups of 32
+        all_embeddings = []
+        for i in range(0, len(texts), 32):
+            batch = texts[i:i+32]
+            embeddings = self._call_api(batch)
+            all_embeddings.extend(embeddings)
+        return all_embeddings
+    
+    def embed_query(self, text):
+        result = self._call_api([text])
+        return result[0]
 
 
 # ═══════════════════════════════════════════════════════════
@@ -125,7 +162,7 @@ class RAGEngine:
 
         # ── Embedding model (API-based — no torch/local model needed) ──
         print("\n  Loading embedding model (API-based)...")
-        self.embeddings = HuggingFaceInferenceAPIEmbeddings(
+        self.embeddings = HFAPIEmbeddings(
             api_key=HF_API_KEY,
             model_name=EMBEDDING_MODEL,
         )
