@@ -40,6 +40,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.retrievers import BM25Retriever
 # (HuggingFaceEmbeddings import removed)
 from langchain_groq import ChatGroq
+from langchain_core.embeddings import Embeddings
 from langchain_core.prompts import PromptTemplate
 from langchain_core.documents import Document
 
