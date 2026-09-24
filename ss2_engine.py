@@ -159,6 +159,7 @@ class RAGEngine:
             groq_api_key=GROQ_API_KEY,
             model_name=LLM_MODEL,
             temperature=0,
+            max_tokens=600,
         )
 
         self.rag_prompt = PromptTemplate(
