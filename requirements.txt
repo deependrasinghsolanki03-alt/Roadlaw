@@ -13,5 +13,4 @@ pydantic
 supabase
 requests
 httpx
-sentence-transformers[onnx]
-onnxruntime
+fastembed
