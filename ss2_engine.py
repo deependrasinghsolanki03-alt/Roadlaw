@@ -49,11 +49,29 @@ from langchain_pinecone import PineconeVectorStore
 
 
 # ═══════════════════════════════════════════════════════════
+#  LIGHTWEIGHT EMBEDDING (FastEmbed — ONNX, no PyTorch)
+# ═══════════════════════════════════════════════════════════
+
+class FastEmbedEmbeddings(Embeddings):
+    """Lightweight embeddings using FastEmbed (ONNX, no PyTorch needed)."""
+    
+    def __init__(self, model_name: str = "BAAI/bge-base-en-v1.5"):
+        from fastembed import TextEmbedding
+        print(f"  Loading FastEmbed model: {model_name}")
+        self.model = TextEmbedding(model_name=model_name)
+    
+    def embed_documents(self, texts):
+        return [e.tolist() for e in self.model.embed(texts)]
+    
+    def embed_query(self, text):
+        return list(self.model.embed([text]))[0].tolist()
+
+# ═══════════════════════════════════════════════════════════
 #  CONFIGURATION
 # ═══════════════════════════════════════════════════════════
 
 PDF_FOLDER = "./legal_pdfs"
-EMBEDDING_MODEL = "sentence-transformers/all-mpnet-base-v2"
+EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
 PINECONE_INDEX_NAME = "roadlaw-legal"
 PINECONE_CLOUD = "aws"
 PINECONE_REGION = "us-east-1"
@@ -123,12 +141,10 @@ class RAGEngine:
         print("  ROADLAW RAG ENGINE v2 — Pinecone Cloud Edition")
         print("=" * 60)
 
-        # ── Embedding model (torch CPU) ──
-        print("\n  Loading embedding model...")
-        self.embeddings = HuggingFaceEmbeddings(
+        # ── Embedding model (FastEmbed ONNX — no PyTorch needed) ──
+        print("\n  Loading embedding model (FastEmbed)...")
+        self.embeddings = FastEmbedEmbeddings(
             model_name=EMBEDDING_MODEL,
-            model_kwargs={"device": "cpu"},
-            encode_kwargs={"normalize_embeddings": True},
         )
 
         # ── Pinecone vector store ──
