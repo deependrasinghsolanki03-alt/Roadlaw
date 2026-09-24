@@ -49,21 +49,21 @@ from langchain_pinecone import PineconeVectorStore
 
 
 # ═══════════════════════════════════════════════════════════
-#  LIGHTWEIGHT EMBEDDING (FastEmbed — ONNX, no PyTorch)
+#  LIGHTWEIGHT EMBEDDING (sentence-transformers ONNX backend)
 # ═══════════════════════════════════════════════════════════
 
-class FastEmbedEmbeddings(Embeddings):
-    """Lightweight embeddings using FastEmbed (ONNX Runtime, no PyTorch)."""
+class OnnxEmbeddings(Embeddings):
+    """Sentence-transformers with ONNX backend — same model, less RAM."""
     
-    def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
-        from fastembed import TextEmbedding
-        self.model = TextEmbedding(model_name=model_name)
+    def __init__(self, model_name: str = "sentence-transformers/all-mpnet-base-v2"):
+        from sentence_transformers import SentenceTransformer
+        self.model = SentenceTransformer(model_name, backend="onnx")
     
     def embed_documents(self, texts):
-        return [e.tolist() for e in self.model.embed(texts)]
+        return self.model.encode(texts, normalize_embeddings=True).tolist()
     
     def embed_query(self, text):
-        return list(self.model.embed([text]))[0].tolist()
+        return self.model.encode([text], normalize_embeddings=True)[0].tolist()
 
 
 # ═══════════════════════════════════════════════════════════
@@ -141,9 +141,9 @@ class RAGEngine:
         print("  ROADLAW RAG ENGINE v2 — Pinecone Cloud Edition")
         print("=" * 60)
 
-        # ── Embedding model (FastEmbed ONNX — lightweight, no PyTorch) ──
-        print("\n  Loading embedding model (FastEmbed ONNX)...")
-        self.embeddings = FastEmbedEmbeddings(
+        # ── Embedding model (ONNX backend — lightweight, same model) ──
+        print("\n  Loading embedding model (ONNX backend)...")
+        self.embeddings = OnnxEmbeddings(
             model_name=EMBEDDING_MODEL,
         )
 
