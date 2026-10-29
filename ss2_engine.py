@@ -50,29 +50,84 @@ from langchain_pinecone import PineconeVectorStore
 
 
 # ═══════════════════════════════════════════════════════════
-#  LIGHTWEIGHT EMBEDDING (FastEmbed — ONNX, no PyTorch)
+#  ZERO-RAM API EMBEDDINGS (OpenRouter / Hosted API)
 # ═══════════════════════════════════════════════════════════
 
-class FastEmbedEmbeddings(Embeddings):
-    """Lightweight embeddings using FastEmbed (ONNX, no PyTorch needed)."""
-    
-    def __init__(self, model_name: str = "BAAI/bge-base-en-v1.5"):
-        from fastembed import TextEmbedding
-        print(f"  Loading FastEmbed model: {model_name}")
-        self.model = TextEmbedding(model_name=model_name)
-    
-    def embed_documents(self, texts):
-        return [e.tolist() for e in self.model.embed(texts)]
-    
-    def embed_query(self, text):
-        return list(self.model.embed([text]))[0].tolist()
+class APIEmbeddings(Embeddings):
+    """
+    Zero-RAM API Embeddings using OpenRouter (or HuggingFace Inference API).
+    Outputs 768-dimensional vectors matching BAAI/bge-base-en-v1.5.
+    Uses 0 MB of local server RAM!
+    """
+    def __init__(self, model_name: str = "baai/bge-base-en-v1.5"):
+        self.model_name = model_name
+        self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+        self.hf_token = os.getenv("HF_TOKEN", "").strip()
+        print(f"  [EMBED] Initialized Zero-RAM API Embeddings (Model: {self.model_name})")
+
+    def _embed_openrouter(self, texts: list[str]) -> list[list[float]]:
+        url = "https://openrouter.ai/api/v1/embeddings"
+        headers = {
+            "Authorization": f"Bearer {self.openrouter_api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": self.model_name,
+            "input": texts
+        }
+        res = requests.post(url, headers=headers, json=payload, timeout=25)
+        if res.status_code != 200:
+            raise Exception(f"OpenRouter Embeddings error {res.status_code}: {res.text}")
+        data = res.json()
+        sorted_data = sorted(data["data"], key=lambda x: x.get("index", 0))
+        return [item["embedding"] for item in sorted_data]
+
+    def _embed_huggingface(self, texts: list[str]) -> list[list[float]]:
+        # Hugging Face serverless router for BAAI/bge-base-en-v1.5
+        url = "https://router.huggingface.co/hf-inference/models/BAAI/bge-base-en-v1.5"
+        headers = {"Content-Type": "application/json"}
+        if self.hf_token:
+            headers["Authorization"] = f"Bearer {self.hf_token}"
+        res = requests.post(url, headers=headers, json={"inputs": texts}, timeout=25)
+        if res.status_code != 200:
+            raise Exception(f"HuggingFace Embeddings error {res.status_code}: {res.text}")
+        embeddings = res.json()
+        return embeddings
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        # 1. Try OpenRouter if key is provided
+        if self.openrouter_api_key:
+            try:
+                return self._embed_openrouter(texts)
+            except Exception as e:
+                print(f"  [WARN] OpenRouter embedding failed: {e}. Trying fallback...")
+
+        # 2. Try HuggingFace Serverless API
+        try:
+            return self._embed_huggingface(texts)
+        except Exception as e:
+            # 3. Fallback to FastEmbed if installed locally
+            print(f"  [WARN] External embedding APIs failed ({e}), checking local fallback...")
+            try:
+                from fastembed import TextEmbedding
+                if not hasattr(self, "_fallback_model"):
+                    self._fallback_model = TextEmbedding(model_name="BAAI/bge-base-en-v1.5")
+                return [e.tolist() for e in self._fallback_model.embed(texts)]
+            except Exception as fe:
+                raise Exception(
+                    "All embedding providers failed. Please add OPENROUTER_API_KEY in Render Environment Variables. "
+                    f"Details: {fe}"
+                )
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed_documents([text])[0]
 
 # ═══════════════════════════════════════════════════════════
 #  CONFIGURATION
 # ═══════════════════════════════════════════════════════════
 
 PDF_FOLDER = "./legal_pdfs"
-EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
+EMBEDDING_MODEL = "baai/bge-base-en-v1.5"
 PINECONE_INDEX_NAME = "roadlaw-legal"
 PINECONE_CLOUD = "aws"
 PINECONE_REGION = "us-east-1"
@@ -142,9 +197,9 @@ class RAGEngine:
         print("  ROADLAW RAG ENGINE v2 — Pinecone Cloud Edition")
         print("=" * 60)
 
-        # ── Embedding model (FastEmbed ONNX — no PyTorch needed) ──
-        print("\n  Loading embedding model (FastEmbed)...")
-        self.embeddings = FastEmbedEmbeddings(
+        # ── Embedding model (Zero-RAM API Embeddings) ──
+        print("\n  Loading embedding model (Zero-RAM API Embeddings)...")
+        self.embeddings = APIEmbeddings(
             model_name=EMBEDDING_MODEL,
         )
 
@@ -210,22 +265,9 @@ class RAGEngine:
             text_key="text",
         )
 
-        # Init BM25 from Pinecone data (fetch all docs for BM25)
-        if total_vectors > 0:
-            print(f"  Loading docs for BM25 retriever...")
-            try:
-                # Fetch a sample for BM25 — Pinecone doesn't support get_all easily
-                # Use a dummy query to fetch TOP docs for BM25 init
-                sample_docs = self.vectorstore.similarity_search("law rule fine penalty", k=min(total_vectors, 500))
-                if sample_docs:
-                    print(f"  Initializing BM25 retriever ({len(sample_docs)} chunks)...")
-                    self.bm25_retriever = BM25Retriever.from_documents(sample_docs)
-                    self.bm25_retriever.k = TOP_K
-            except Exception as e:
-                print(f"  BM25 init skipped: {e}")
-                self.bm25_retriever = None
-        else:
-            self.bm25_retriever = None
+        # Cloud Vector Search only — zero in-memory BM25 footprint to strictly respect 512MB RAM
+        self.bm25_retriever = None
+        print("  [MEMORY] Cloud vector store initialized. In-memory BM25 disabled to conserve RAM.")
 
     # ─────────────────────────────────────────────────────
     #  INGEST PDF WITH METADATA

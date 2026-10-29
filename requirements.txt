@@ -13,4 +13,3 @@ pydantic
 supabase
 requests
 httpx
-fastembed
