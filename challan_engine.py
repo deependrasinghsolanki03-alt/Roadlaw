@@ -96,20 +96,37 @@ memory_db: dict = {}
 # ===================================================================
 
 async def load_from_supabase():
-    """Fetch challans.json from Supabase Storage and build memory_db."""
+    """Load challan data into memory_db. Uses local challans_dump.json with Supabase sync."""
     global memory_db
     memory_db.clear()
     
-    print(f"  [SUPABASE] Fetching JSON from {CHALLAN_JSON_URL}")
-    resp = requests.get(CHALLAN_JSON_URL)
-    
-    if resp.status_code != 200:
-        print(f"  [ERR] Failed to download JSON: {resp.status_code}")
-        return 0
-        
-    records = resp.json()
+    records = []
+    # 1. Pre-load local dump immediately so server is instantly ready
+    import json, os
+    dump_paths = ["challans_dump.json", "challan/challans_dump.json", "../challans_dump.json"]
+    for p in dump_paths:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    records = json.load(f)
+                print(f"  [LOCAL] Pre-loaded {len(records)} records from {p}")
+                break
+            except Exception as ex:
+                print(f"  [LOCAL] Error reading {p}: {ex}")
+
+    # 2. Try fetching updated data from Supabase if reachable
+    try:
+        print(f"  [SUPABASE] Checking remote JSON from {CHALLAN_JSON_URL}")
+        resp = requests.get(CHALLAN_JSON_URL, timeout=3)
+        if resp.status_code == 200:
+            remote_records = resp.json()
+            if remote_records:
+                records = remote_records
+                print(f"  [SUPABASE] Successfully refreshed {len(records)} records from Supabase.")
+    except Exception as e:
+        print(f"  [SUPABASE] Remote fetch skipped ({e}). Using local records.")
+
     total = 0
-    
     for doc in records:
         country = doc.get("country", "India")
         state = doc.get("state_name", "National")
@@ -120,7 +137,7 @@ async def load_from_supabase():
         memory_db[country][state].append(doc)
         total += 1
 
-    print(f"  [STATS] Total: {total} challan records loaded from JSON\n")
+    print(f"  [STATS] Total: {total} challan records ready in memory\n")
     return total
 
 async def add_challan_to_supabase(doc: dict):
